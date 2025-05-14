@@ -83,7 +83,8 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
                     train=False,
                     train_rng=None,
                     mutable=False)
-    q_val = jnp.sum(q_val) / bs * 10 # примерно в диапазоне 100-200
+    q_val = jnp.clip(q_val - 10, min=0, max=10) # [0, 10]
+    q_val = jnp.sum(q_val) / bs * 40 # примерно в диапазоне 0-300
     return loss.mean() - q_val, next_sampler_state # mean - мат. ожидание в формуле
 
   return am_loss
