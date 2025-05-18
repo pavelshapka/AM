@@ -34,26 +34,24 @@ def get_config():
   
   # training
   config.train = train = ml_collections.ConfigDict()
-  train.batch_size = 48
-  train.n_jitted_steps = 1 # Количество батчей, упаковынных в один тензора для 1 итерации
+  train.batch_size = 128
+  train.n_jitted_steps = 1
   train.n_iters = 500_000
-  train.save_every = 5_000
-  train.eval_every = 10_000
+  train.save_every = 2_500
+  train.eval_every = 5_000
   train.log_every = 50
   train.lr = 1e-4
   train.beta1 = 0.9
   train.eps = 1e-8
-  train.warmup = 5_000 # Количество итераций в warmup режиме
-  train.grad_clip = 1. # Обрезка градиентов, например: 
-                       #  1. По значению:grad = max(-treshhold, min(treshhold, grad))
-                       #  2. По норме: grad = grad * min(1, treshhold / ||grad||)
+  train.warmup = 5_000
+  train.grad_clip = 1.  
 
   # evaluation
   config.eval = eval = ml_collections.ConfigDict()
-  eval.batch_size = 48
-  eval.artifact_size = 48
-  eval.num_samples = 1_000
+  eval.batch_size = 100
+  eval.artifact_size = 64
+  eval.num_samples = 50_000
   eval.use_ema = True
-  eval.estimate_bpd = True
+  eval.estimate_bpd = False
 
   return config

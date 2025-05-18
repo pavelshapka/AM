@@ -11,7 +11,7 @@ import jax
 import flax
 import numpy as np
 import tensorflow as tf
-import tensorflow_gan as tfgan
+# import tensorflow_gan as tfgan
 import flax.jax_utils as flax_utils
 from jax import random, jit
 from jax import numpy as jnp
@@ -52,6 +52,7 @@ def train(config, workdir):
   checkpoint_dir = os.path.join(workdir, "checkpoints")
   tf.io.gfile.makedirs(checkpoint_dir)
   state = checkpoints.restore_checkpoint(checkpoint_dir, state)
+  state = state.replace(wandbid=np.random.randint(int(1e7),int(1e8)))
   initial_step = int(state.step)
   key = state.key
 
@@ -76,8 +77,9 @@ def train(config, workdir):
                     config.data.image_size, 
                     config.data.num_channels)
   pshape = (jax.local_device_count(), artifact_shape[0]//jax.local_device_count()) + artifact_shape[1:]
-  artifact_generator = tutils.get_artifact_generator(model, config, dynamics, pshape[1:])
+  artifact_generator, trajectory_generator = tutils.get_artifact_generator(model, config, dynamics, pshape[1:], dopri5=True)
   p_artifact_generator = jax.pmap(artifact_generator, axis_name='batch')
+  p_trajectory_generator = jax.pmap(trajectory_generator, axis_name='batch')
 
   # init dataloaders
   train_ds, _, _ = datasets.get_dataset(config, 
@@ -96,11 +98,14 @@ def train(config, workdir):
     batch = jax.tree_map(lambda x: scaler(x._numpy()), next(train_iter)) # Достаем батч и применяем функцию масштабирования к каждому элементу батча
     key, *next_key = random.split(key, num=jax.local_device_count() + 1)
     next_key = jnp.asarray(next_key)
-    (_, pstate), ploss = p_step_fn((next_key, pstate), batch) # ploss: (num_devices, n_jitted_steps)
+    (_, pstate), (ploss, pq_vals) = p_step_fn((next_key, pstate), batch) # ploss: (num_devices, n_jitted_steps)
     loss = ploss.mean() # средний loss по n_jitted_steps
-
+    # q_vals = pq_vals.mean() # средний q_vals по n_jitted_steps
     if (step % config.train.log_every == 0) and (jax.process_index() == 0):
-      wandb.log(dict(loss=loss.item()), step=step)
+      with open("q_vals.txt", "a") as f:
+        f.write(f"{step} {pq_vals}\n")
+
+      wandb.log(dict(loss=loss.item(), q_vals=jnp.sum(pq_vals) / config.train.batch_size * 7), step=step)
 
     if (step % config.train.save_every == 0) and (jax.process_index() == 0):
       saved_state = flax_utils.unreplicate(pstate)
@@ -119,7 +124,6 @@ def train(config, workdir):
       final_x = inverse_scaler(artifacts.reshape(artifact_shape))
       wandb.log(dict(examples=[wandb.Image(tutils.stack_imgs(final_x))],
                      nfe=jnp.mean(num_steps).item()), step=step)
-
 
 def evaluate(config, workdir, eval_folder):
   key = random.PRNGKey(config.seed)

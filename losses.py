@@ -13,7 +13,7 @@ from dynamics import dynamics
 import dynamics.utils as dutils
 import optax
 from typing import Any
-
+import os
 
 def get_loss(config, model, q_t, time_sampler, train):
   if 'am' == config.model.loss:
@@ -35,7 +35,7 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
   #   w_t_fn = lambda t: jnp.ones_like(t)
   # else:
   Q = q_net.RegressionInceptionNetV1()
-  state_dict = checkpoints.restore_checkpoint(ckpt_dir="./Q_checkpoint")
+  state_dict = checkpoints.restore_checkpoint(ckpt_dir=os.path.join(os.path.dirname(__file__), "./Q_checkpoint"), target=None)
 
   class TrainState(train_state.TrainState):
     batch_stats: Any
@@ -78,14 +78,16 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
     print(loss.shape, 'final.shape')
 
     states_actions = jnp.concatenate([x_t, dsdx], axis=-1)
-    q_val = Q.apply(Q_state.params,
-                    states_actions,
-                    train=False,
-                    train_rng=None,
-                    mutable=False)
-    q_val = jnp.clip(q_val - 10, min=0, max=10) # [0, 10]
-    q_val = jnp.sum(q_val) / bs * 40 # примерно в диапазоне 0-300
-    return loss.mean() - q_val, next_sampler_state # mean - мат. ожидание в формуле
+    q_vals = Q.apply({"params": Q_state.params,
+                      "batch_stats": Q_state.batch_stats},
+                     states_actions,
+                     train=False,
+                     train_rng=None,
+                     mutable=False)
+    q_vals = jnp.clip(q_vals, min=0, max=20) # [0, 10]
+    q_loss = jnp.sum(q_vals) / bs * 10 # примерно в диапазоне 0-100
+    # jax.debug.print('q_loss: {q_loss}, q_vals: {q_vals}', q_loss=q_loss, q_vals=q_vals)
+    return loss.mean() - q_loss, (jnp.squeeze(q_vals), next_sampler_state) # mean - мат. ожидание в формуле
 
   return am_loss
 

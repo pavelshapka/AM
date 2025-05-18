@@ -28,7 +28,7 @@ def get_step_fn(optimizer, loss_fn):
     (rng, state) = carry_state
     rng, step_rng = jax.random.split(rng)
     grad_fn = jax.value_and_grad(loss_fn, argnums=1, has_aux=True)
-    (loss, new_sampler_state), grad = grad_fn(step_rng, state.model_params, state.sampler_state, batch)
+    (loss, (q_vals, new_sampler_state)), grad = grad_fn(step_rng, state.model_params, state.sampler_state, batch)
     grad = jax.lax.pmean(grad, axis_name='batch') # градиент берем средним по батчу
     updates, opt_state = optimizer.update(grad, state.opt_state, state.model_params)
     new_params = optax.apply_updates(state.model_params, updates)
@@ -45,15 +45,22 @@ def get_step_fn(optimizer, loss_fn):
     )
 
     loss = jax.lax.pmean(loss, axis_name='batch') # средний loss по всем устройствам
+    q_vals = jax.lax.pmean(q_vals, axis_name='batch') # средний q_vals по всем устройствам
     new_carry_state = (rng, new_state)
-    return new_carry_state, loss
+    return new_carry_state, (loss, q_vals)
 
   return step_fn
 
 
-def get_artifact_generator(model, config, dynamics, artifact_shape):
+def get_artifact_generator(model, config, dynamics, artifact_shape, dopri5=False):
+  trajectory_generator = None
+
   if 'am' == config.model.loss:
     generator = get_ode_generator(model, config, dynamics, artifact_shape)
+    if dopri5:
+      generator = get_ode_generator_Dopri5(model, config, dynamics, artifact_shape)
+    
+    trajectory_generator = get_ode_generator_full_trajectory(model, config, dynamics, artifact_shape)
   elif 'sam' == config.model.loss:  
     generator = get_sde_generator(model, config, dynamics, artifact_shape)
   elif 'ssm' == config.model.loss:  
@@ -62,7 +69,7 @@ def get_artifact_generator(model, config, dynamics, artifact_shape):
     generator = get_dsm_generator(model, config, dynamics, artifact_shape)
   else:
     raise NotImplementedError(f'generator for f{config.model.loss} is not implemented')
-  return generator
+  return generator, trajectory_generator
 
 
 def get_ode_generator(model, config, dynamics, artifact_shape):
@@ -85,6 +92,58 @@ def get_ode_generator(model, config, dynamics, artifact_shape):
   
     solution = solve(y0=x_0)
     return solution.ys[-1][:,:,:,:artifact_shape[3]], solution.stats['num_steps']
+    
+  return artifact_generator
+
+def get_ode_generator_Dopri5(model, config, dynamics, artifact_shape):
+  def artifact_generator(key, state, batch):
+    x_0, _, _ = dynamics(key, batch, t=jnp.zeros((1)))
+    
+    s = mutils.get_model_fn(model, 
+                            state.params_ema if config.eval.use_ema else state.model_params, 
+                            train=False)
+    def vector_field(t,y,args):
+      dsdx = jax.grad(lambda _t, _x: s(_t*jnp.ones([x_0.shape[0],1,1,1]), _x).sum(), argnums=1)
+      return dsdx(t,y)
+    t0, t1 = 0.0, 1.0
+
+    solve = partial(diffrax.diffeqsolve, 
+                    terms=diffrax.ODETerm(vector_field), 
+                    solver=diffrax.Dopri5(), 
+                    t0=t0, t1=t1, dt0=1e-4, 
+                    saveat=diffrax.SaveAt(ts=[t1]),
+                    # stepsize_controller=CustomController(),
+                    stepsize_controller=diffrax.PIDController(rtol=1e-5, atol=1e-5), 
+                    adjoint=diffrax.RecursiveCheckpointAdjoint())
+  
+    solution = solve(y0=x_0)
+    return solution.ys[-1][:,:,:,:artifact_shape[3]], solution.stats['num_steps']
+    
+  return artifact_generator
+
+def get_ode_generator_full_trajectory(model, config, dynamics, artifact_shape):
+  def artifact_generator(key, state, batch):
+    x_0, _, _ = dynamics(key, batch, t=jnp.zeros((1)))
+    
+    s = mutils.get_model_fn(model, 
+                            state.params_ema if config.eval.use_ema else state.model_params, 
+                            train=False)
+    def vector_field(t,y,args):
+      dsdx = jax.grad(lambda _t, _x: s(_t*jnp.ones([x_0.shape[0],1,1,1]), _x).sum(), argnums=1)
+      return dsdx(t,y)
+    t0, t1 = 0.0, 1.0
+
+    solve = partial(diffrax.diffeqsolve, 
+                    terms=diffrax.ODETerm(vector_field), 
+                    solver=diffrax.Dopri5(), 
+                    t0=t0, t1=t1, dt0=1e-4, 
+                    saveat=diffrax.SaveAt(steps=True),
+                    # stepsize_controller=CustomController(),
+                    stepsize_controller=diffrax.PIDController(rtol=1e-5, atol=1e-5), 
+                    adjoint=diffrax.RecursiveCheckpointAdjoint())
+  
+    solution = solve(y0=x_0)
+    return solution.ys[:,:,:,:artifact_shape[3]], solution.stats['num_steps']
     
   return artifact_generator
 
