@@ -103,9 +103,9 @@ def train(config, workdir):
     # q_vals = pq_vals.mean() # средний q_vals по n_jitted_steps
     if (step % config.train.log_every == 0) and (jax.process_index() == 0):
       with open("q_vals.txt", "a") as f:
-        f.write(f"{step} {pq_vals}\n")
+        f.write(f"{step} => {pq_vals}\n")
 
-      wandb.log(dict(loss=loss.item(), q_vals=jnp.sum(pq_vals) / config.train.batch_size * 7), step=step)
+      wandb.log(dict(loss=loss.item(), q_vals=jnp.sum(pq_vals)), step=step)
 
     if (step % config.train.save_every == 0) and (jax.process_index() == 0):
       saved_state = flax_utils.unreplicate(pstate)
