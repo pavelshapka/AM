@@ -34,6 +34,20 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
   # if config.model.const_weight:
   #   w_t_fn = lambda t: jnp.ones_like(t)
   # else:
+
+  CIFAR10_MEANS = jnp.array([0.4914, 0.4822, 0.4465])
+  CIFAR10_STD = jnp.array([0.229, 0.224, 0.225])
+
+  def rescale(img):
+    img = img * 0.5 + 0.5 # обратно в [0, 1]
+    img = (img - CIFAR10_MEANS) / CIFAR10_STD # в масштаб Q модели
+    return img
+
+  def get_states_actions(x_t, dsdx):
+    x_t = rescale(x_t)
+    dsdx = rescale(dsdx)
+    return jnp.concatenate([x_t, dsdx], axis=-1)
+
   Q = q_net.RegressionInceptionNetV1()
   state_dict = checkpoints.restore_checkpoint(ckpt_dir=os.path.join(os.path.dirname(__file__), "./Q_checkpoint"), target=None)
 
@@ -58,6 +72,7 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
     # sample time
     t_0, t_1 = config.data.t_0*jnp.ones((bs,1,1,1)), config.data.t_1*jnp.ones((bs,1,1,1))
     t, next_sampler_state = time_sampler.sample_t(bs, sampler_state) # sample_uniformly function
+    order_idx = jnp.argsort(t)
     t = jnp.expand_dims(t, (1,2,3)) # [1, 2, 3] -> [ [[[1]]], [[[2]]], [[[3]]] ]
     # sample data
     x_0, x_1, x_t = q_t(keys[0], data, t, t_0, t_1) # (1 - t) * noise + t * data
@@ -77,7 +92,7 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
     loss += s_t.reshape((-1,1,1,1))*dwdt_fn(t)*p_t # Производная сложной функции (из-за того, что домножаем на w(t))
     print(loss.shape, 'final.shape')
 
-    states_actions = jnp.concatenate([x_t, dsdx], axis=-1)
+    states_actions = get_states_actions(x_t, dsdx)
     q_vals = Q.apply({"params": Q_state.params,
                       "batch_stats": Q_state.batch_stats},
                      states_actions,
@@ -85,9 +100,11 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
                      train_rng=None,
                      mutable=False)
     q_vals = jnp.clip(q_vals, min=0, max=20) # [0, 10]
-    q_loss = jnp.sum(q_vals) / bs * 10 # примерно в диапазоне 0-100
+    q_loss = jnp.sum(q_vals) / bs * 20 # примерно в диапазоне 0-100
+
+    # order_idx = jnp.argsort(jnp.squeeze(t))
     # jax.debug.print('q_loss: {q_loss}, q_vals: {q_vals}', q_loss=q_loss, q_vals=q_vals)
-    return loss.mean() - q_loss, (jnp.squeeze(q_vals), next_sampler_state) # mean - мат. ожидание в формуле
+    return loss.mean() - q_loss, (jnp.squeeze(q_vals)[order_idx], next_sampler_state) # mean - мат. ожидание в формуле
 
   return am_loss
 
