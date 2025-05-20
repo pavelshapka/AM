@@ -45,6 +45,8 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
 
   def get_states_actions(x_t, dsdx):
     x_t = rescale(x_t)
+    scale = jnp.linspace(5, 10, num=dsdx.shape[0]).reshape((-1,1,1,1))
+    dsdx /= scale
     dsdx = rescale(dsdx)
     return jnp.concatenate([x_t, dsdx], axis=-1)
 
@@ -92,7 +94,7 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
     loss += s_t.reshape((-1,1,1,1))*dwdt_fn(t)*p_t # Производная сложной функции (из-за того, что домножаем на w(t))
     print(loss.shape, 'final.shape')
 
-    states_actions = get_states_actions(x_t, dsdx)
+    states_actions = get_states_actions(x_t[order_idx], dsdx[order_idx])
     q_vals = Q.apply({"params": Q_state.params,
                       "batch_stats": Q_state.batch_stats},
                      states_actions,
@@ -100,7 +102,7 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
                      train_rng=None,
                      mutable=False)
     q_vals = jnp.clip(q_vals, min=0, max=20) # [0, 10]
-    q_loss = jnp.sum(q_vals) / bs * 20 # примерно в диапазоне 0-100
+    q_loss = jnp.sum(q_vals) / bs * 20 # примерно в диапазоне 0-400
 
     # order_idx = jnp.argsort(jnp.squeeze(t))
     # jax.debug.print('q_loss: {q_loss}, q_vals: {q_vals}', q_loss=q_loss, q_vals=q_vals)

@@ -52,7 +52,6 @@ def train(config, workdir):
   checkpoint_dir = os.path.join(workdir, "checkpoints")
   tf.io.gfile.makedirs(checkpoint_dir)
   state = checkpoints.restore_checkpoint(checkpoint_dir, state)
-  state = state.replace(wandbid=np.random.randint(int(1e7),int(1e8)))
   initial_step = int(state.step)
   key = state.key
 
