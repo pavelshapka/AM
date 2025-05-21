@@ -31,6 +31,7 @@ def get_config():
   model.attn_resolutions = (16,8)
   model.resamp_with_conv = True
   model.dropout = 0.1
+  model.use_q_loss = True
   
   # training
   config.train = train = ml_collections.ConfigDict()

@@ -30,7 +30,6 @@ def get_loss(config, model, q_t, time_sampler, train):
 
 
 def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynamics, time_sampler, train=True
-
   # if config.model.const_weight:
   #   w_t_fn = lambda t: jnp.ones_like(t)
   # else:
@@ -59,7 +58,18 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
                               params=state_dict["params"],
                               batch_stats=state_dict["batch_stats"],
                               tx=optax.identity())
-  
+
+  def calculate_Q_loss(x_t, dsdx):
+    states_actions = get_states_actions(x_t[order_idx], dsdx[order_idx])
+    q_vals = Q.apply({"params": Q_state.params,
+                      "batch_stats": Q_state.batch_stats},
+                     states_actions,
+                     train=False,
+                     train_rng=None,
+                     mutable=False)
+    q_vals = jnp.clip(q_vals, min=0, max=20) # [0, 10]
+    return q_vals
+
   w_t_fn = lambda t: (1-t) # Модификация Action Matching (взвешенный)
   dwdt_fn = jax.grad(lambda t: w_t_fn(t).sum(), argnums=0)
 
@@ -94,19 +104,23 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
     loss += s_t.reshape((-1,1,1,1))*dwdt_fn(t)*p_t # Производная сложной функции (из-за того, что домножаем на w(t))
     print(loss.shape, 'final.shape')
 
-    states_actions = get_states_actions(x_t[order_idx], dsdx[order_idx])
-    q_vals = Q.apply({"params": Q_state.params,
-                      "batch_stats": Q_state.batch_stats},
-                     states_actions,
-                     train=False,
-                     train_rng=None,
-                     mutable=False)
-    q_vals = jnp.clip(q_vals, min=0, max=20) # [0, 10]
+    q_vals = jax.lax.cond(config.model.use_q_loss,
+                          lambda: calculate_Q_loss(x_t[order_idx], dsdx[order_idx]),
+                          lambda: jnp.array([0]))
     q_loss = jnp.sum(q_vals) / bs * 20 # примерно в диапазоне 0-400
 
-    # order_idx = jnp.argsort(jnp.squeeze(t))
-    # jax.debug.print('q_loss: {q_loss}, q_vals: {q_vals}', q_loss=q_loss, q_vals=q_vals)
-    return loss.mean() - q_loss, (jnp.squeeze(q_vals)[order_idx], next_sampler_state) # mean - мат. ожидание в формуле
+    # states_actions = get_states_actions(x_t[order_idx], dsdx[order_idx])
+    # q_vals = Q.apply({"params": Q_state.params,
+    #                   "batch_stats": Q_state.batch_stats},
+    #                  states_actions,
+    #                  train=False,
+    #                  train_rng=None,
+    #                  mutable=False)
+    # q_vals = jnp.clip(q_vals, min=0, max=20) # [0, 10]
+    # q_loss = jnp.sum(q_vals) / bs * 20 # примерно в диапазоне 0-400
+
+
+    return loss.mean() - q_loss, (jnp.squeeze(q_vals), next_sampler_state) # mean - мат. ожидание в формуле
 
   return am_loss
 
