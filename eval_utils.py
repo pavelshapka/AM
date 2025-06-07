@@ -135,15 +135,12 @@ def get_ode_generator(model, config, dynamics, artifact_shape):
       dsdx = jax.grad(lambda _t, _x: s(_t*jnp.ones([x_0.shape[0],1,1,1]), _x).sum(), argnums=1)
       return dsdx(t,y)
     t0, t1 = 0.0, 1.0
-    class CustomController(diffrax.PIDController):
-      pass
     solve = partial(diffrax.diffeqsolve, 
                     terms=diffrax.ODETerm(vector_field), 
                     solver=diffrax.Dopri5(), 
                     t0=t0, t1=t1, dt0=1e-4, 
                     saveat=diffrax.SaveAt(ts=[t1]),
-                    stepsize_controller=CustomController(),
-                    # stepsize_controller=diffrax.PIDController(rtol=1e-5, atol=1e-5), 
+                    stepsize_controller=diffrax.PIDController(rtol=1e-5, atol=1e-5), 
                     adjoint=diffrax.RecursiveCheckpointAdjoint())
   
     solution = solve(y0=x_0)

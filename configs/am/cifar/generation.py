@@ -53,6 +53,6 @@ def get_config():
   eval.artifact_size = 64
   eval.num_samples = 50_000
   eval.use_ema = True
-  eval.estimate_bpd = False
+  eval.estimate_bpd = True
 
   return config

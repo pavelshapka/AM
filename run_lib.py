@@ -175,38 +175,38 @@ def evaluate(config, workdir, eval_folder):
   scaler = datasets.get_image_scaler(config)
   inverse_scaler = datasets.get_image_inverse_scaler(config)
 
-  # bpds = []
+  bpds = []
   global_iter = eval_state.global_iter
-  # if config.eval.estimate_bpd:
-  #   # init bpd estimator
-  #   get_bpd = eutils.get_bpd_estimator(model, config)
-  #   p_get_bpd = jax.pmap(get_bpd, axis_name='batch')
+  if config.eval.estimate_bpd:
+    # init bpd estimator
+    get_bpd = eutils.get_bpd_estimator(model, config)
+    p_get_bpd = jax.pmap(get_bpd, axis_name='batch')
 
-  #   # estimate bpd
-  #   pstate = flax_utils.replicate(state)
-  #   key = jax.random.fold_in(key, jax.process_index())
-  #   for _ in range(eval_state.bpd_batch_id):
-  #     next(test_iter)
-  #   for batch_id in range(eval_state.bpd_batch_id, len(test_ds)):
-  #     batch = jax.tree_map(lambda x: scaler(x._numpy()), next(test_iter))
-  #     key, *next_key = random.split(key, num=jax.local_device_count() + 1)
-  #     next_key = jnp.asarray(next_key)
-  #     bpd, num_steps = p_get_bpd(next_key, pstate, batch)
-  #     bpds.append(bpd)
-  #     print(f'batch {batch_id}/{len(test_ds)}, bpd: {bpd}, num_steps: {num_steps}')
-  #     global_iter += 1
-  #     eval_state = eval_state.replace(bpd_batch_id=batch_id, key=key, global_iter=global_iter)
-  #     checkpoints.save_checkpoint(eval_dir, eval_state, step=global_iter, keep=1, prefix='eval_state_')
+    # estimate bpd
+    pstate = flax_utils.replicate(state)
+    key = jax.random.fold_in(key, jax.process_index())
+    for _ in range(eval_state.bpd_batch_id):
+      next(test_iter)
+    for batch_id in range(eval_state.bpd_batch_id, len(test_ds)):
+      batch = jax.tree_map(lambda x: scaler(x._numpy()), next(test_iter))
+      key, *next_key = random.split(key, num=jax.local_device_count() + 1)
+      next_key = jnp.asarray(next_key)
+      bpd, num_steps = p_get_bpd(next_key, pstate, batch)
+      bpds.append(bpd)
+      print(f'batch {batch_id}/{len(test_ds)}, bpd: {bpd}, num_steps: {num_steps}')
+      global_iter += 1
+      eval_state = eval_state.replace(bpd_batch_id=batch_id, key=key, global_iter=global_iter)
+      checkpoints.save_checkpoint(eval_dir, eval_state, step=global_iter, keep=1, prefix='eval_state_')
 
-  # if len(bpds) == 0:
-  #   bpds.append(-jnp.ones(1))
-  # bpds = jnp.stack(bpds)
-  # mean_bpd, std_bpd = bpds.mean(), bpds.std()
+  if len(bpds) == 0:
+    bpds.append(-jnp.ones(1))
+  bpds = jnp.stack(bpds)
+  mean_bpd, std_bpd = bpds.mean(), bpds.std()
   mean_bpd, std_bpd = 0, 0
-  # print(f'final bpd: {mean_bpd}/{std_bpd}')
+  print(f'final bpd: {mean_bpd}/{std_bpd}')
 
   # init inception
-  inception_model = evaluation.get_inception_model(inceptionv3=True)
+  inception_model = evaluation.get_inception_model(inceptionv3=False)
 
   # generate samples
   pstate = flax_utils.replicate(state) # реплицируем состояние на устройства
@@ -280,7 +280,7 @@ def fid_stats(config, workdir, fid_folder="assets/stats"):
                                                       evaluation=True)
   train_iter = iter(train_ds)
 
-  inception_model = evaluation.get_inception_model(inceptionv3=True)
+  inception_model = evaluation.get_inception_model(inceptionv3=False)
 
   all_pools = []
   num_batches = math.ceil(config.eval.num_samples / config.eval.batch_size)
