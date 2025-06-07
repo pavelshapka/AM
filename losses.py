@@ -59,8 +59,8 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
                               batch_stats=state_dict["batch_stats"],
                               tx=optax.identity())
 
-  def calculate_Q_loss(x_t, dsdx):
-    states_actions = get_states_actions(x_t[order_idx], dsdx[order_idx])
+  def calculate_Q_loss(x_t_sorted, dsdx_sorted):
+    states_actions = get_states_actions(x_t_sorted, dsdx_sorted)
     q_vals = Q.apply({"params": Q_state.params,
                       "batch_stats": Q_state.batch_stats},
                      states_actions,
@@ -106,7 +106,7 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
 
     q_vals = jax.lax.cond(config.model.use_q_loss,
                           lambda: calculate_Q_loss(x_t[order_idx], dsdx[order_idx]),
-                          lambda: jnp.array([0]))
+                          lambda: jnp.zeros((bs, 1)))
     q_loss = jnp.sum(q_vals) / bs * 20 # примерно в диапазоне 0-400
 
     # states_actions = get_states_actions(x_t[order_idx], dsdx[order_idx])
