@@ -43,12 +43,11 @@ def get_inception_model(inceptionv3=False):
 def load_dataset_stats(config):
   """Load the pre-computed dataset statistics."""
   if config.data.dataset == 'CIFAR10':
-    
-    filename = 'assets/stats/cifar10_stats.npz'
-  elif config.data.dataset == 'CELEBA':
-    filename = 'assets/stats/celeba_stats.npz'
-  elif config.data.dataset == 'LSUN':
-    filename = f'assets/stats/lsun_{config.data.category}_{config.data.image_size}_stats.npz'
+    filename = 'checkpoint/assets/stats/cifar10_stats.npz'
+  # elif config.data.dataset == 'CELEBA':
+  #   filename = 'assets/stats/celeba_stats.npz'
+  # elif config.data.dataset == 'LSUN':
+  #   filename = f'assets/stats/lsun_{config.data.category}_{config.data.image_size}_stats.npz'
   else:
     raise ValueError(f'Dataset {config.data.dataset} stats not found.')
 
@@ -169,6 +168,9 @@ def calculate_frechet_distance(act1, act2, eps=1e-6):
     Returns:
     --   : The Frechet Distance.
     """
+
+    act1 = act1.reshape(act1.shape[0], -1)
+    act2 = act2.reshape(act2.shape[0], -1)
 
     mu1, sigma1 = np.mean(act1, axis=0), np.cov(act1, rowvar=False)
     mu2, sigma2 = np.mean(act2, axis=0), np.cov(act2, rowvar=False)

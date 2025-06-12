@@ -29,7 +29,7 @@ def get_bpd_estimator(model, config):
   return get_bpd
 
 
-def get_am_bpd_estimator(model, config):
+def get_am_bpd_estimator(model, config, is_dopri5=False):
 
   def get_bpd(key, state, batch):
     x_1 = batch['image']
@@ -47,14 +47,23 @@ def get_am_bpd_estimator(model, config):
       return (dsdx_val, (jvp_val*eps).sum((1,2,3))) # mind that dt is negative in the solver
 
     t0, t1 = 0.0, 1.0
-    solve = partial(diffrax.diffeqsolve,
-                    terms=diffrax.ODETerm(vector_field),
-                    solver=diffrax.Dopri5(),
-                    t0=t1, t1=t0, dt0=-1e-4, 
-                    saveat=diffrax.SaveAt(ts=[t0]),
-                    stepsize_controller=diffrax.PIDController(rtol=1e-5, atol=1e-5),
-                    adjoint=diffrax.RecursiveCheckpointAdjoint())
-  
+    if is_dopri5:
+      solve = partial(diffrax.diffeqsolve,
+                      terms=diffrax.ODETerm(vector_field),
+                      solver=diffrax.Dopri5(),
+                      t0=t1, t1=t0, dt0=-1e-4, 
+                      saveat=diffrax.SaveAt(ts=[t0]),
+                      stepsize_controller=diffrax.PIDController(rtol=1e-5, atol=1e-5),
+                      adjoint=diffrax.RecursiveCheckpointAdjoint())
+    else:
+      solve = partial(diffrax.diffeqsolve,
+                      terms=diffrax.ODETerm(vector_field),
+                      solver=diffrax.Euler(),
+                      t0=t1, t1=t0, dt0=-1.0/config.eval.euler_steps, 
+                      saveat=diffrax.SaveAt(ts=[t0]),
+                      stepsize_controller=diffrax.ConstantStepSize(),
+                      adjoint=diffrax.RecursiveCheckpointAdjoint())
+
     solution = solve(y0=(x_1, jnp.zeros(x_1.shape[0])), args=(state,))
     x_0, delta_log_p = solution.ys[0][-1], solution.ys[1][-1]
     D = jnp.array(x_0.shape[1:]).prod()
@@ -153,7 +162,7 @@ def get_ode_generator(model, config, dynamics, artifact_shape, is_dopri5):
                       solver=diffrax.Euler(), 
                       t0=0.0, t1=1.0, dt0=1.0/config.eval.euler_steps, 
                       saveat=diffrax.SaveAt(ts=[1.0]),
-                      stepsize_controller=diffrax.ConstantStepSize(True), 
+                      stepsize_controller=diffrax.ConstantStepSize(), 
                       adjoint=diffrax.RecursiveCheckpointAdjoint())
   
     solution = solve(y0=x_0)
@@ -210,7 +219,7 @@ def get_sde_generator(model, config, dynamics, artifact_shape):
                     solver=diffrax.Euler(), 
                     t0=0.0, t1=1.0, dt0=1e-2, 
                     saveat=diffrax.SaveAt(ts=[1.0]),
-                    stepsize_controller=diffrax.ConstantStepSize(True), 
+                    stepsize_controller=diffrax.ConstantStepSize(), 
                     adjoint=diffrax.RecursiveCheckpointAdjoint())
 
     solution = solve(y0=x_0)

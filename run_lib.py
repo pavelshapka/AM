@@ -179,7 +179,7 @@ def evaluate(config, workdir, eval_folder):
   global_iter = eval_state.global_iter
   if config.eval.estimate_bpd:
     # init bpd estimator
-    get_bpd = eutils.get_bpd_estimator(model, config)
+    get_bpd = eutils.get_bpd_estimator(model, config, is_dopri5=False)
     p_get_bpd = jax.pmap(get_bpd, axis_name='batch')
 
     # estimate bpd
