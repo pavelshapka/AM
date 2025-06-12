@@ -45,7 +45,8 @@ def get_config():
   train.beta1 = 0.9
   train.eps = 1e-8
   train.warmup = 5_000
-  train.grad_clip = 1.  
+  train.grad_clip = 1.
+  train.euler_steps = 100
 
   # evaluation
   config.eval = eval = ml_collections.ConfigDict()
@@ -54,5 +55,6 @@ def get_config():
   eval.num_samples = 50_000
   eval.use_ema = True
   eval.estimate_bpd = True
+  eval.euler_steps = 100
 
   return config

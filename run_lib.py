@@ -76,7 +76,7 @@ def train(config, workdir):
                     config.data.image_size, 
                     config.data.num_channels)
   pshape = (jax.local_device_count(), artifact_shape[0]//jax.local_device_count()) + artifact_shape[1:]
-  artifact_generator, trajectory_generator = tutils.get_artifact_generator(model, config, dynamics, pshape[1:], dopri5=True)
+  artifact_generator, trajectory_generator = tutils.get_artifact_generator(model, config, dynamics, pshape[1:], is_dopri5=False)
   p_artifact_generator = jax.pmap(artifact_generator, axis_name='batch')
   p_trajectory_generator = jax.pmap(trajectory_generator, axis_name='batch')
 
@@ -104,8 +104,8 @@ def train(config, workdir):
       log_dict = dict(loss=loss.item())
       if config.model.use_q_loss:
         log_dict['q_vals'] = jnp.sum(pq_vals)
-        with open("q_vals.txt", "a") as f:
-          f.write(f"{step} => {jnp.sum(pq_vals)} {pq_vals}\n")
+        # with open("q_vals.txt", "a") as f:
+        #   f.write(f"{step} => {jnp.sum(pq_vals)} {pq_vals}\n")
 
       wandb.log(log_dict, step=step)
 
@@ -164,7 +164,7 @@ def evaluate(config, workdir, eval_folder):
                     config.data.image_size, 
                     config.data.num_channels)
   pshape = (jax.local_device_count(), artifact_shape[0]//jax.local_device_count()) + artifact_shape[1:]
-  artifact_generator = eutils.get_artifact_generator(model, config, dynamics, pshape[1:])
+  artifact_generator = eutils.get_artifact_generator(model, config, dynamics, pshape[1:], is_dopri5=False)
   p_artifact_generator = jax.pmap(artifact_generator, axis_name='batch')
 
   # init dataloaders
