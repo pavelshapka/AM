@@ -19,9 +19,9 @@ class EvalState:
   key: Any
 
 
-def get_bpd_estimator(model, config):
+def get_bpd_estimator(model, config, is_dopri5=False):
   if 'am' == config.model.loss:
-    get_bpd = get_am_bpd_estimator(model, config)
+    get_bpd = get_am_bpd_estimator(model, config, is_dopri5)
   elif 'dsm' == config.model.loss:  
     get_bpd = get_dsm_bpd_estimator(model, config)
   else:
