@@ -202,8 +202,10 @@ def evaluate(config, workdir, eval_folder):
     bpds.append(-jnp.ones(1))
   bpds = jnp.stack(bpds)
   mean_bpd, std_bpd = bpds.mean(), bpds.std()
-  mean_bpd, std_bpd = 0, 0
   print(f'final bpd: {mean_bpd}/{std_bpd}')
+
+  if not config.eval.estimate_is_fid:
+    return
 
   # init inception
   inception_model = evaluation.get_inception_model(inceptionv3=False)

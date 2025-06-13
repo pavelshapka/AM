@@ -55,6 +55,7 @@ def get_config():
   eval.num_samples = 50_000
   eval.use_ema = True
   eval.estimate_bpd = True
-  eval.euler_steps = 100
+  eval.estimate_is_fid = True
+  eval.euler_steps = 20
 
   return config
