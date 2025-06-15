@@ -30,48 +30,33 @@ def get_loss(config, model, q_t, time_sampler, train):
 
 
 def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynamics, time_sampler, train=True
-  # if config.model.const_weight:
-  #   w_t_fn = lambda t: jnp.ones_like(t)
-  # else:
-
-  CIFAR10_MEANS = jnp.array([0.4914, 0.4822, 0.4465])
-  CIFAR10_STD = jnp.array([0.229, 0.224, 0.225])
-
-  def rescale(img):
-    img = img * 0.5 + 0.5 # обратно в [0, 1]
-    img = (img - CIFAR10_MEANS) / CIFAR10_STD # в масштаб Q модели
-    return img
-
-  def get_states_actions(x_t, dsdx):
-    x_t = rescale(x_t)
-    scale = jnp.linspace(5, 10, num=dsdx.shape[0]).reshape((-1,1,1,1))
-    dsdx /= scale
-    dsdx = rescale(dsdx)
-    return jnp.concatenate([x_t, dsdx], axis=-1)
+  w_t_fn = lambda t: (1-t) # Модификация Action Matching (взвешенный)
+  dwdt_fn = jax.grad(lambda t: w_t_fn(t).sum(), argnums=0)
 
   Q = q_net.RegressionInceptionNetV1()
   state_dict = checkpoints.restore_checkpoint(ckpt_dir=os.path.join(os.path.dirname(__file__), "./Q_checkpoint"), target=None)
 
   class TrainState(train_state.TrainState):
     batch_stats: Any
+
   Q_state = TrainState.create(apply_fn=Q.apply,
                               params=state_dict["params"],
                               batch_stats=state_dict["batch_stats"],
                               tx=optax.identity())
 
-  def calculate_Q_loss(x_t_sorted, dsdx_sorted):
-    states_actions = get_states_actions(x_t_sorted, dsdx_sorted)
+  def calculate_Q_loss(x_t: jnp.ndarray, dsdx: jnp.ndarray):
+    dt = 1.0/config.train.euler_steps # 1/20
+    states_actions = jnp.concatenate([x_t, dsdx * dt], axis=-1)
     q_vals = Q.apply({"params": Q_state.params,
                       "batch_stats": Q_state.batch_stats},
                      states_actions,
                      train=False,
                      train_rng=None,
                      mutable=False)
-    q_vals = jnp.clip(q_vals, min=0, max=20) # [0, 10]
+    q_vals = jnp.clip(q_vals, min=-10, max=30) # [-10, 30]
     return q_vals
 
-  w_t_fn = lambda t: (1-t) # Модификация Action Matching (взвешенный)
-  dwdt_fn = jax.grad(lambda t: w_t_fn(t).sum(), argnums=0)
+  left_bound, right_bound = 1/config.train.euler_steps, 1 - 1/config.train.euler_steps
 
   def am_loss(key, params, sampler_state, batch):
     keys = random.split(key, num=5)
@@ -84,7 +69,6 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
     # sample time
     t_0, t_1 = config.data.t_0*jnp.ones((bs,1,1,1)), config.data.t_1*jnp.ones((bs,1,1,1))
     t, next_sampler_state = time_sampler.sample_t(bs, sampler_state) # sample_uniformly function
-    order_idx = jnp.argsort(t)
     t = jnp.expand_dims(t, (1,2,3)) # [1, 2, 3] -> [ [[[1]]], [[[2]]], [[[3]]] ]
     # sample data
     x_0, x_1, x_t = q_t(keys[0], data, t, t_0, t_1) # (1 - t) * noise + t * data
@@ -105,22 +89,14 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
     print(loss.shape, 'final.shape')
 
     q_vals = jax.lax.cond(config.model.use_q_loss,
-                          lambda: calculate_Q_loss(x_t[order_idx], dsdx[order_idx]),
+                          lambda: calculate_Q_loss(x_t, dsdx),
                           lambda: jnp.zeros((bs, 1)))
-    q_loss = jnp.sum(q_vals) / bs * 20 # примерно в диапазоне 0-400
+    
+    mask = jnp.where((t > left_bound) & (t < right_bound), 1, 0)
+    q_vals *= mask
+    q_loss = jnp.sum(q_vals) / jnp.sum(mask) * config.train.q_loss_factor # учитываем только те значения, которые не слишком близки к границам
 
-    # states_actions = get_states_actions(x_t[order_idx], dsdx[order_idx])
-    # q_vals = Q.apply({"params": Q_state.params,
-    #                   "batch_stats": Q_state.batch_stats},
-    #                  states_actions,
-    #                  train=False,
-    #                  train_rng=None,
-    #                  mutable=False)
-    # q_vals = jnp.clip(q_vals, min=0, max=20) # [0, 10]
-    # q_loss = jnp.sum(q_vals) / bs * 20 # примерно в диапазоне 0-400
-
-
-    return loss.mean() - q_loss, (jnp.squeeze(q_vals), next_sampler_state) # mean - мат. ожидание в формуле
+    return loss.mean() - q_loss, (q_vals, next_sampler_state) # mean - мат. ожидание в формуле
 
   return am_loss
 

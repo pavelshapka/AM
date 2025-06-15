@@ -78,7 +78,6 @@ def train(config, workdir):
   pshape = (jax.local_device_count(), artifact_shape[0]//jax.local_device_count()) + artifact_shape[1:]
   artifact_generator, trajectory_generator = tutils.get_artifact_generator(model, config, dynamics, pshape[1:], is_dopri5=False)
   p_artifact_generator = jax.pmap(artifact_generator, axis_name='batch')
-  p_trajectory_generator = jax.pmap(trajectory_generator, axis_name='batch')
 
   # init dataloaders
   train_ds, _, _ = datasets.get_dataset(config, 
@@ -99,13 +98,14 @@ def train(config, workdir):
     next_key = jnp.asarray(next_key)
     (_, pstate), (ploss, pq_vals) = p_step_fn((next_key, pstate), batch) # ploss: (num_devices, n_jitted_steps)
     loss = ploss.mean() # средний loss по n_jitted_steps
+    print(pq_vals.shape, 'pq_vals.shape')
     # q_vals = pq_vals.mean() # средний q_vals по n_jitted_steps
     if (step % (config.train.log_every * 20) == 0) and (jax.process_index() == 0):
       log_dict = dict(loss=loss.item())
       if config.model.use_q_loss:
         log_dict['q_vals'] = jnp.sum(pq_vals)
-        # with open("q_vals.txt", "a") as f:
-        #   f.write(f"{step} => {jnp.sum(pq_vals)} {pq_vals}\n")
+        with open("q_vals.txt", "a") as f:
+          f.write(f"{step} => {jnp.sum(pq_vals)} {pq_vals}\n")
 
       wandb.log(log_dict, step=step)
 

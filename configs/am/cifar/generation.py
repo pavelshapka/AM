@@ -47,6 +47,7 @@ def get_config():
   train.warmup = 5_000
   train.grad_clip = 1.
   train.euler_steps = 100
+  train.q_loss_factor = 20
 
   # evaluation
   config.eval = eval = ml_collections.ConfigDict()
