@@ -69,6 +69,7 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
     # sample time
     t_0, t_1 = config.data.t_0*jnp.ones((bs,1,1,1)), config.data.t_1*jnp.ones((bs,1,1,1))
     t, next_sampler_state = time_sampler.sample_t(bs, sampler_state) # sample_uniformly function
+    mask = jnp.where((t > left_bound) & (t < right_bound), 1, 0)
     t = jnp.expand_dims(t, (1,2,3)) # [1, 2, 3] -> [ [[[1]]], [[[2]]], [[[3]]] ]
     # sample data
     x_0, x_1, x_t = q_t(keys[0], data, t, t_0, t_1) # (1 - t) * noise + t * data
@@ -92,8 +93,7 @@ def get_am_loss(config, model, q_t, time_sampler, train): # config, model, dynam
                           lambda: calculate_Q_loss(x_t, dsdx),
                           lambda: jnp.zeros((bs, 1)))
     
-    mask = jnp.where((t > left_bound) & (t < right_bound), 1, 0)
-    q_vals *= mask
+    q_vals *= mask.reshape((-1, 1))
     q_loss = jnp.sum(q_vals) / jnp.sum(mask) * config.train.q_loss_factor # учитываем только те значения, которые не слишком близки к границам
 
     return loss.mean() - q_loss, (q_vals, next_sampler_state) # mean - мат. ожидание в формуле

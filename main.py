@@ -22,6 +22,7 @@ def launch(argv):
   # tf.config.experimental.set_visible_devices([], "TPU") # Отключение TPU для TensorFlow
 
   os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
+  os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.95'
 
   if FLAGS.mode == "train":
     # Create the working directory

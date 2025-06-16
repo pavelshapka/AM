@@ -41,6 +41,7 @@ def get_config():
   train.save_every = 2_500
   train.eval_every = 5_000
   train.log_every = 50
+  train.print_every = 1000
   train.lr = 1e-4
   train.beta1 = 0.9
   train.eps = 1e-8
